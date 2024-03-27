@@ -51,6 +51,7 @@ function receiveData(event) {
         console.log('Received data (hex)' + a.join(' '));
    
     const decodedString = decoder.decode(value);
+    
     if (decodedString === 'Extract start' || decodedString === 'Extract ended' || decodedString === 'Sampling start' || decodedString === 'Sampling ended') {
         console.log('Received data (string):', decodedString);
         displayReceivedData(decodedString);
@@ -62,13 +63,10 @@ function receiveData(event) {
     //let hexString = bytesToHexString(value);
     //console.log('Received data (hex):', hexString);
     // 在控制台打印转换后的十六进制字符串
-    
+    //IMU 的指令进行解码 && 数据整理；
     let receivedData = "";
-        // 将十六进制数据转换成字符串显示
-   // console.log('Received data (hex):', value);
-    //console.log('Received data (string):', decodedString);
     const value1 = new TextDecoder().decode(event.target.value);
-    document.getElementById('data1').innerText = 'Received:1 ' + value1+ value;
+    //document.getElementById('data1').innerText = 'Received:1 ' + value1+ value;
     //displayReceivedData(decodedString);
     displayReceivedData(a);
 
@@ -107,18 +105,19 @@ function receiveData(event) {
     /*
     let dataContainer = document.getElementById("data");
     dataContainer.innerHTML =value;
-
+    */
     // Process IMU data
     IMUprocess(receivedData);
 
     // Process IMU data and send data if step count increases
     let currentSteps = IMUprocess(receivedData);
+    console.log('currentSteps',currentSteps)
     //根据方法一 的步数发出信号to BLE。
     if (currentSteps > steps) {
-        sendBluetoothData(1); // Send '1' when step count increases
+        //sendBluetoothData(1); // Send '1' when step count increases
         steps = currentSteps; // Update steps
     }
-    */
+    
    
 }
 
@@ -170,8 +169,6 @@ async function sendBluetoothData(data) {
 }
 
 
-
-
 // Function to start scanning for BLE devices
 async function startScan() {
     try {
@@ -193,16 +190,17 @@ async function startScan() {
     }
 }
 
+let xValues = [];
+let yValues = [];
+let zValues = [];
 
 // Function to process IMU data and calculate step frequency
 function IMUprocess(data) {
     // Parse the received data to extract X, Y, Z values
     let lines = data.split("<br>");
     // ？？需不需要将xValues，yValues 以及zValues 设为全局变量
-    let xValues = [];
-    let yValues = [];
-    let zValues = [];
 
+    console.log(`x length：${xValues.length},y length：${yValues.length},z length：${zValues.length}`);
     lines.forEach(function(line) {
         if (line.startsWith("X")) {
             xValues.push(parseFloat(line.split(": ")[1]));
@@ -221,6 +219,8 @@ function IMUprocess(data) {
     //？？？如果如果要每个magnitude 记录下来的话把i 放在外面???
     for (let i = 0; i < xValues.length; i++) {
         let accelerationMagnitude = Math.sqrt(xValues[i] * xValues[i] + yValues[i] * yValues[i] + zValues[i] * zValues[i]);
+        push(MagListInDB,accelerationMagnitude);
+        console.log('Mag',accelerationMagnitude)
         // 阈值算法
         let threshold = 10; // Adjust threshold as needed
         let currentTimestamp = Date.now();
@@ -230,9 +230,7 @@ function IMUprocess(data) {
                 steps_A++;
             }
         }
-        lastTimestamp_A = currentTimestamp;
-        console.log(accelerationMagnitude)
-        push(MagListInDB,accelerationMagnitude);
+        lastTimestamp_A = currentTimestamp;     
         return steps_A;
     }
 
@@ -266,7 +264,7 @@ function IMUprocess(data) {
     // Calculate step frequency (steps per minute)
     let stepFrequency_B = steps_B / ((lastTimestamp_B - lines.length * 5) / 1000 / 60);
     console.log("方法二 步频 (步/分钟): " + stepFrequency_B.toFixed(2));
-    push(ShoppingListInDB,method2Result);
+    //push(ShoppingListInDB,method2Result);
     //把方法一获得的步频 放入标签为step_BList的数据库里
     push(steps_BListInDB,stepFrequency_B);
 
