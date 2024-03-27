@@ -19,39 +19,94 @@ const steps_BListInDB=ref(database,"step_AList")
 
 let lastTimestamp = 0;
 let steps = 0;
-let bluetoothCharacteristic;
+let RX_characteristic;
+let TX_characteristic;
+
+function displayReceivedData(data) {
+    const dataContainer = document.getElementById('receivedDataContainer');
+    if (!dataContainer) {
+        console.error('Data container not found');
+        return;
+    }
+
+    // 创建一个新的 <div> 元素用于显示数据
+    const newDataDiv = document.createElement('div');
+    newDataDiv.textContent = 'Received: ' + data;
+
+    // 将新的数据添加到页面中的容器中
+    dataContainer.appendChild(newDataDiv);
+}
+
 
 // Function to handle receiving data from the BLE device
 function receiveData(event) {
     let value = event.target.value;
-    let dataView = new DataView(value.buffer);
+    const decoder = new TextDecoder('utf-8');
+        // 检查如果是字符串类型则直接使用，不再解码
+        
+        let a = [];
+        for (let i = 0; i < value.byteLength; i++) {
+            a.push('0x' + ('00' + value.getUint8(i).toString(16)).slice(-2));
+        }
+        console.log('Received data (hex)' + a.join(' '));
+   
+    const decodedString = decoder.decode(value);
+    if (decodedString === 'Extract start' || decodedString === 'Extract ended' || decodedString === 'Sampling start' || decodedString === 'Sampling ended') {
+        console.log('Received data (string):', decodedString);
+        displayReceivedData(decodedString);
+        return;
+    }
+    
+
+    //let dataView = new DataView(value.buffer);
+    //let hexString = bytesToHexString(value);
+    //console.log('Received data (hex):', hexString);
+    // 在控制台打印转换后的十六进制字符串
+    
     let receivedData = "";
+        // 将十六进制数据转换成字符串显示
+   // console.log('Received data (hex):', value);
+    //console.log('Received data (string):', decodedString);
+    const value1 = new TextDecoder().decode(event.target.value);
+    document.getElementById('data1').innerText = 'Received:1 ' + value1+ value;
+    //displayReceivedData(decodedString);
+    displayReceivedData(a);
+
+    // 创建一个 ArrayBuffer 来表示字节序列
+    let bytes = new Uint8Array(a).buffer;
+
+    // 创建 DataView 对象
+    let dataView = new DataView(bytes);
 
     // !! Loop through data in chunks of 5 bytes (assuming each data point is 5 bytes)
+    
     for (let i = 0; i < dataView.byteLength; i += 5) {
         let dataType = dataView.getUint8(i); // Get the data type
         let dataValue = dataView.getFloat32(i + 1, true); // Get the data value (little-endian)
 
         // Process data based on data type
         switch (dataType) {
-            case 0xAA:
-                receivedData += "X: " + convertAndFormatData(dataValue) + "<br>";
+            case 0xaa:
+                receivedData += "X: " + convertAndFormatData(dataValue);
                 break;
-            case 0xBB:
-                receivedData += "Y: " + convertAndFormatData(dataValue) + "<br>";
+            case 0xbb:
+                receivedData += "Y: " + convertAndFormatData(dataValue) ;
                 break;
-            case 0xCC:
-                receivedData += "Z: " + convertAndFormatData(dataValue) + "<br>";
+            case 0xcc:
+                receivedData += "Z: " + convertAndFormatData(dataValue) ;
                 break;
             default:
                 // Unknown data type
-                receivedData += "未知数据类型: " + dataType.toString(16) + "<br>";
+                receivedData += "未知数据类型: " + dataType.toString(16) ;
         }
+        console.log('Received data (string):',receivedData);
+        displayReceivedData(receivedData);
     }
 
     // Display received data
+    /*
     let dataContainer = document.getElementById("data");
-    dataContainer.innerHTML = receivedData;
+    dataContainer.innerHTML =value;
 
     // Process IMU data
     IMUprocess(receivedData);
@@ -63,6 +118,21 @@ function receiveData(event) {
         sendBluetoothData(1); // Send '1' when step count increases
         steps = currentSteps; // Update steps
     }
+    */
+   
+}
+
+// 辅助函数：将字节数组转换为十六进制字符串
+function bytesToHexString(bytes) {
+    let hexString = '';
+    for (let i = 0; i < bytes.length; i++) {
+        let hex = (bytes[i] & 0xff).toString(16); // 获取字节的十六进制表示
+        hex = hex.length === 1 ? '0' + hex : hex; // 确保两位表示
+        hexString += hex;
+    }
+    //console.log(hexString.toUpperCase());
+    return hexString.toUpperCase(); // 转换为大写形式
+    
 }
 
 
@@ -78,22 +148,28 @@ function convertAndFormatData(value) {
 // Function to send data to the Bluetooth device
 async function sendBluetoothData(data) {
     try {
-        if (!bluetoothCharacteristic) {
-            console.error("Bluetooth characteristic not available.");
+        if (!TX_characteristic) {
+            console.error("Bluetooth TX_characteristic not available.");
             return;
         }
-
+        //const command = 'SG10K'; 
+        const command = data;
         // Convert data to ArrayBuffer
-        let buffer = new ArrayBuffer(1); // Assuming 1 byte of data
-        let dataView = new DataView(buffer);
-        dataView.setUint8(0, data);
+        //let buffer = new ArrayBuffer(1); // Assuming 1 byte of data
+        const encoder = new TextEncoder();
+        let dataView = encoder.encode(command);
+        
 
-        await bluetoothCharacteristic.writeValue(buffer);
-        console.log("Sent data to Bluetooth: " + data);
+        await RX_characteristic.writeValueWithoutResponse(dataView);
+        console.log("Sent data to Bluetooth: " + command);
     } catch (error) {
-        console.error('Error sending data to Bluetooth:', error);
+        console.error('Failed to send command', error);
+        console.error('Error message:', error.message);
+        console.error('Error code:', error.code);
     }
 }
+
+
 
 
 // Function to start scanning for BLE devices
@@ -105,11 +181,13 @@ async function startScan() {
         });
         const server = await device.gatt.connect();
         const service = await server.getPrimaryService('6e400001-b5a3-f393-e0a9-e50e24dcca9e'); // Add your device's service UUID, have to follow the format 
-        const characteristic = await service.getCharacteristic('6e400003-b5a3-f393-e0a9-e50e24dcca9e'); // Add your device's characteristic UUID, have to follow the format 
-
+        RX_characteristic = await service.getCharacteristic('6e400002-b5a3-f393-e0a9-e50e24dcca9e'); // Add your device's characteristic UUID, have to follow the format 
+        // 再设一个TX_characteristic
+        TX_characteristic = await service.getCharacteristic('6e400003-b5a3-f393-e0a9-e50e24dcca9e'); 
         // Subscribe to notifications to receive data
-        await characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', receiveData);
+        await TX_characteristic.startNotifications();
+        TX_characteristic.addEventListener('characteristicvaluechanged', receiveData);
+        //return TX_characteristic.startNotifications();
     } catch (error) {
         console.error('Error:', error);
     }
@@ -199,3 +277,17 @@ function IMUprocess(data) {
 document.getElementById("scanButton").addEventListener("click", startScan);
 
 
+document.getElementById("sendButton").addEventListener("click",function(){
+    let inputValue=document.getElementById("input-value").value;
+    //sendBluetoothData('S31OK');
+    
+    if(inputValue!==""){
+        sendBluetoothData(inputValue);
+        //sendBluetoothData();
+        
+        console.log(RX_characteristic);
+        console.log(inputValue);
+    }else{
+        console.error("Invalid threshold value.");
+    }
+});
